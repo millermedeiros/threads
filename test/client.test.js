@@ -59,45 +59,45 @@ suite('client', function() {
     });
   });
 
-  suite('streams', function() {
+  suite('observables', function() {
     setup(function() {
       thread = threads.create({
-        src: '/base/test/lib/streams.js',
+        src: '/base/test/lib/observables.js',
         type: 'worker'
       });
 
-      this.client = threads.client('test-streams', { thread: thread });
+      this.client = threads.client('test-observables', { thread: thread });
     });
 
     test('listen + close', function(done) {
-      var stream = this.client.stream('test-data', 'bar', 123);
+      var observable = this.client.observable('test-data', 'bar', 123);
       var buffer = '';
-      stream.listen(function(data) {
+      observable.listen(function(data) {
         buffer += data;
       });
-      stream.closed.then(function() {
+      observable.closed.then(function() {
         assert.equal(buffer, '1: bar 123 | 2: this should also work');
         done();
       });
     });
 
     test('listen + unlisten + close', function(done) {
-      var stream = this.client.stream('test-data', 'bar', 123);
+      var observable = this.client.observable('test-data', 'bar', 123);
       var buffer = '';
-      stream.listen(function onData(data) {
+      observable.listen(function onData(data) {
         buffer += data;
         // stop listening for data
-        stream.unlisten(onData);
+        observable.unlisten(onData);
       });
-      stream.closed.then(function() {
+      observable.closed.then(function() {
         assert.equal(buffer, '1: bar 123');
         done();
       });
     });
 
     test('abort', function(done) {
-      var stream = this.client.stream('test-abort', 123);
-      stream.closed.then(function(data) {
+      var observable = this.client.observable('test-abort', 123);
+      observable.closed.then(function(data) {
         done('close should not be called');
       }).catch(function(abortReason) {
         assert.equal(abortReason, 'someArg should not equal 123');
@@ -106,17 +106,17 @@ suite('client', function() {
     });
 
     test('listen + cancel', function(done) {
-      var stream = this.client.stream('test-cancel');
+      var observable = this.client.observable('test-cancel');
       var buffer = '';
-      stream.listen(function(data) {
+      observable.listen(function(data) {
         buffer += data;
       });
-      stream.closed.then(function() {
+      observable.closed.then(function() {
         done('close should not be called');
       }).catch(function() {
         done('abort should not be called');
       });
-      stream.cancel('because I want it').then(function(data) {
+      observable.cancel('because I want it').then(function(data) {
         assert.equal(data, 'because I want it!!!');
         assert.ok(buffer.length > 0);
         done();

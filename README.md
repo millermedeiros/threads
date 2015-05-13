@@ -122,34 +122,34 @@ threads.service('my-service')
   .method('myMethod', function(param) { return 'hello: ' + param; });
 ```
 
-## Streams
+## Observables
 
 Some services need to send data in *chunks* to the clients and also allow
 a way of canceling the action before it is completed. For these cases register
-the action as a `stream()`:
+the action as a `observable()`:
 
 ```js
 threads.service('my-service')
-  .stream('myStreamingMethod', function(stream, param) {
+  .observable('myObservableMethod', function(observable, param) {
     if (param === 'foo') {
-      stream.write('bar');
+      observable.write('bar');
     }
 
     if (param === 'dolor') {
       // abort() is the way to signal to client that action failed
-      stream.abort(new TypeError('invalid argument "dolor"'));
+      observable.abort(new TypeError('invalid argument "dolor"'));
       return;
     }
 
     var timeout = setTimeout(function() {
-      stream.write('baz');
+      observable.write('baz');
       // close() signals that action finished with success
-      stream.close();
+      observable.close();
     }, 10);
 
-    // you should implement the `cancel` method on the `stream` if your service
+    // you should implement the `cancel` method on the `observable` if your service
     // supports cancellation
-    stream.cancel = function(reason) {
+    observable.cancel = function(reason) {
       clearTimeout(timeout);
       // you can return a promise if cancel is async; or omit return if action
       // is synchronous or you don't want to notify the client about completion
@@ -159,23 +159,23 @@ threads.service('my-service')
 
 ```js
 var client = threads.client('my-service');
-var stream = client.stream('myStreamingMethod', 'foo');
+var observable = client.observable('myObservableMethod', 'foo');
 
 // called every time the service sends some data
-stream.listen(function(data) {
+observable.listen(function(data) {
   console.log('data:', data);
 });
 
-// "closed" is a Promise that will be fullfilled when stream is closed with
+// "closed" is a Promise that will be fullfilled when observable is closed with
 // success or rejected when the service "abort" the operation
-stream.closed.then(onStreamClose, onStreamAbort);
+observable.closed.then(onObservableClose, onObservableAbort);
 
 // important to note that not all services are able to handle cancellation
 // in those cases the promise will be rejected
-stream.cancel('because I want').then(onCancelSuccess, onCancelError);
+observable.cancel('because I want').then(onCancelSuccess, onCancelError);
 ```
 
-PS: The streaming implementation is very basic and doesn't handle
+PS: The observable implementation is very basic and doesn't handle
 *backpressure*, buffering and piping; it is just a simple event bridge between
 the `service` and the `client`. This was done on purpose to avoid complexity.
 The methods `close()`, `abort()` and `write()` return Promises that can be used

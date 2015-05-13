@@ -1,13 +1,4 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.threads = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-
-module.exports = {
-  create: require('./lib/child-thread'),
-  manager: require('./lib/manager'),
-  service: require('./lib/service'),
-  client: require('./lib/client')
-};
-
-},{"./lib/child-thread":2,"./lib/client":3,"./lib/manager":6,"./lib/service":8}],2:[function(require,module,exports){
 'use strict';
 
 /**
@@ -407,7 +398,7 @@ function error(id) {
   }[id]);
 }
 
-},{"./emitter":5,"./messenger":7,"./utils":11}],3:[function(require,module,exports){
+},{"./emitter":4,"./messenger":6,"./utils":10}],2:[function(require,module,exports){
 'use strict';
 
 /**
@@ -415,7 +406,7 @@ function error(id) {
  */
 
 var thread = require('../thread-global');
-var ClientStream = require('./stream');
+var ClientObservable = require('./observable');
 var Messenger = require('../messenger');
 var Emitter = require('../emitter');
 var utils = require('../utils');
@@ -463,7 +454,7 @@ function Client(service, options) {
   this.thread = options && options.thread;
 
   this.id = utils.uuid();
-  this._activeStreams = {};
+  this._activeObservables = {};
   this._connected = false;
 
   this.service = {
@@ -473,7 +464,7 @@ function Client(service, options) {
   };
 
   this.messenger = new Messenger(this.id, 'client')
-    .handle('streamevent', this.onstreamevent, this)
+    .handle('observableevent', this.onobservableevent, this)
     .handle('broadcast', this.onbroadcast, this);
 
   this.connect();
@@ -683,66 +674,66 @@ Client.prototype.method = function(method) {
  *
  * @param {String} method Name of the method to be called
  * @param {*} [...rest] data to be passed to to the method
- * @returns {ClientStream}
+ * @returns {ClientObservable}
  * @public
  */
 
-Client.prototype.stream = function(method) {
-  debug('stream', method, args);
+Client.prototype.observable = function(method) {
+  debug('observable', method, args);
   var args = [].slice.call(arguments, 1);
   var self = this;
 
   // Use an unique id to identify the
-  // stream. We pass this value to the
+  // observable. We pass this value to the
   // service as well so we can map the
-  // service and client streams.
+  // service and client observables.
   // They are different instances
   // that are 'connected' through
   // the bridge by this id.
   var id = utils.uuid();
-  var stream = new ClientStream({
+  var observable = new ClientObservable({
     id: id,
     client: this
   });
 
-  this._activeStreams[id] = stream;
-  this.request('stream', {
+  this._activeObservables[id] = observable;
+  this.request('observable', {
     name: method,
     args: args,
     id: id
   }).catch(function(err) {
-    self.onstreamevent({
+    self.onobservableevent({
       type: 'abort',
       id: id,
       data: err
     });
   });
 
-  return stream;
+  return observable;
 };
 
 /**
  * Called every time the service calls
- * write/abort/close on the ServiceStream
+ * write/abort/close on the ServiceObservable
  *
  * @param {Object} broadcast
- * @param {String} broadcast.id Stream ID
+ * @param {String} broadcast.id Observable ID
  * @param {String} broadcast.type Event type ('write', 'abort' or 'close')
  * @private
  */
 
-Client.prototype.onstreamevent = function(broadcast) {
+Client.prototype.onobservableevent = function(broadcast) {
   var id = broadcast.id;
   var type = broadcast.type;
-  var stream = this._activeStreams[id];
+  var observable = this._activeObservables[id];
 
-  stream._[type](broadcast.data);
+  observable._[type](broadcast.data);
   if (type === 'abort' || type === 'close') {
-    delete this._activeStreams[id];
+    delete this._activeObservables[id];
   }
 };
 
-},{"../emitter":5,"../messenger":7,"../thread-global":10,"../utils":11,"./stream":4}],4:[function(require,module,exports){
+},{"../emitter":4,"../messenger":6,"../thread-global":9,"../utils":10,"./observable":3}],3:[function(require,module,exports){
 'use strict';
 
 /**
@@ -756,7 +747,7 @@ var utils = require('../utils');
  * Exports
  */
 
-module.exports = ClientStream;
+module.exports = ClientObservable;
 
 /**
  * Mini Logger
@@ -764,31 +755,31 @@ module.exports = ClientStream;
  * @type {Function}
  */
 
-var debug = 0 ? console.log.bind(console, '[ClientStream]') : function() {};
+var debug = 0 ? console.log.bind(console, '[ClientObservable]') : function() {};
 
 /**
- * Readable stream instance returned by
- * a `client.stream('methodName')` call.
+ * Readable observable instance returned by
+ * a `client.observable('methodName')` call.
  *
  * @param {Object} options
- * @param {String} options.id Stream Id, used to match client/service streams
+ * @param {String} options.id Observable Id, used to match client/service observables
  * @param {Client} options.client Client instance
  */
 
-function ClientStream(options) {
-  this._ = new ClientStreamPrivate(options);
+function ClientObservable(options) {
+  this._ = new ClientObservablePrivate(options);
 }
 
 /**
  * Promise that will be "resolved" when
- * stream is closed with success, and
+ * observable is closed with success, and
  * "rejected" when service aborts
  * the action (abort == error).
  *
  * @type Promise
  */
 
-Object.defineProperty(ClientStream.prototype, 'closed', {
+Object.defineProperty(ClientObservable.prototype, 'closed', {
   get: function() { return this._.closed.promise; }
 });
 
@@ -800,7 +791,7 @@ Object.defineProperty(ClientStream.prototype, 'closed', {
  * @param {Function} callback
  */
 
-ClientStream.prototype.listen = function(callback) {
+ClientObservable.prototype.listen = function(callback) {
   debug('listen', callback);
   this._.emitter.on('write', callback);
 };
@@ -811,7 +802,7 @@ ClientStream.prototype.listen = function(callback) {
  * @param {Function} callback
  */
 
-ClientStream.prototype.unlisten = function(callback) {
+ClientObservable.prototype.unlisten = function(callback) {
   debug('unlisten', callback);
   this._.emitter.off('write', callback);
 };
@@ -823,23 +814,23 @@ ClientStream.prototype.unlisten = function(callback) {
  * @param {*} [reason] Optional data to be sent to service.
  */
 
-ClientStream.prototype.cancel = function(reason) {
+ClientObservable.prototype.cancel = function(reason) {
   debug('cancel', reason);
 
   var canceled = utils.deferred();
   var client = this._.client;
   var id = this._.id;
 
-  client.request('streamcancel', {
+  client.request('observablecancel', {
     id: id,
     reason: reason
   }).then(function(data) {
-    delete client._activeStreams[id];
+    delete client._activeObservables[id];
     canceled.resolve(data);
   }).catch(function(e) {
-    // should delete the `_activeStreams`
+    // should delete the `_activeObservables`
     // reference even if it didn't succeed
-    delete client._activeStreams[id];
+    delete client._activeObservables[id];
     canceled.reject(e);
   });
 
@@ -847,13 +838,13 @@ ClientStream.prototype.cancel = function(reason) {
 };
 
 /**
- * Initialize a new `ClientStreamPrivate`.
+ * Initialize a new `ClientObservablePrivate`.
  *
  * @param {Object} options
  * @private
  */
 
-function ClientStreamPrivate(options) {
+function ClientObservablePrivate(options) {
   this.id = options.id;
   this.client = options.client;
   this.closed = utils.deferred();
@@ -869,7 +860,7 @@ function ClientStreamPrivate(options) {
  * @private
  */
 
-ClientStreamPrivate.prototype.abort = function(reason) {
+ClientObservablePrivate.prototype.abort = function(reason) {
   debug('abort', reason);
   this.closed.reject(reason);
 };
@@ -882,7 +873,7 @@ ClientStreamPrivate.prototype.abort = function(reason) {
  * @private
  */
 
-ClientStreamPrivate.prototype.close = function() {
+ClientObservablePrivate.prototype.close = function() {
   debug('close');
   this.closed.resolve();
 };
@@ -895,12 +886,12 @@ ClientStreamPrivate.prototype.close = function() {
  * @private
  */
 
-ClientStreamPrivate.prototype.write = function(data) {
+ClientObservablePrivate.prototype.write = function(data) {
   debug('write', data);
   this.emitter.emit('write', data);
 };
 
-},{"../emitter":5,"../utils":11}],5:[function(require,module,exports){
+},{"../emitter":4,"../utils":10}],4:[function(require,module,exports){
 'use strict';
 
 /**
@@ -992,7 +983,7 @@ Emitter.prototype.emit = function(type, data) {
   return this;
 };
 
-},{}],6:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
 'use strict';
 
 /**
@@ -1196,7 +1187,7 @@ ManagerPrivate.prototype.destroyThread = function(thread) {
   delete this.threads[thread.src];
 };
 
-},{"./child-thread":2,"./messenger":7}],7:[function(require,module,exports){
+},{"./child-thread":1,"./messenger":6}],6:[function(require,module,exports){
 'use strict';
 
 /**
@@ -1610,7 +1601,7 @@ function send(channel, params) {
   else channel.postMessage(message);
 }
 
-},{"./utils":11}],8:[function(require,module,exports){
+},{"./utils":10}],7:[function(require,module,exports){
 'use strict';
 
 /**
@@ -1619,7 +1610,7 @@ function send(channel, params) {
 
 var thread = require('../thread-global');
 var Messenger = require('../messenger');
-var ServiceStream = require('./stream');
+var ServiceObservable = require('./observable');
 var utils = require('../utils');
 
 /**
@@ -1627,7 +1618,7 @@ var utils = require('../utils');
  */
 
 exports = module.exports = Service;
-exports.Stream = ServiceStream; // for testing
+exports.Observable = ServiceObservable; // for testing
 
 /**
  * Mini Logger
@@ -1674,14 +1665,14 @@ Service.prototype.method = function(name, fn) {
 };
 
 /**
- * Register a method that sends data through a writable stream.
+ * Register a method that sends data through a writable observable.
  *
  * @param {String} name Method name
  * @param {Function} fn Implementation
  */
 
-Service.prototype.stream = function(name, fn) {
-  this.private.addStream(name, fn);
+Service.prototype.observable = function(name, fn) {
+  this.private.addObservable(name, fn);
   return this;
 };
 
@@ -1727,13 +1718,13 @@ function ServicePrivate(service) {
   this.contract = null;
   this.methods = {};
   this.channels = {};
-  this.streams = {};
-  this.activeStreams = {};
+  this.observables = {};
+  this.activeObservables = {};
 
   this.messenger = new Messenger(this.id, '[Service]')
     .handle('connect', this.onconnect, this)
-    .handle('stream', this.onstream, this)
-    .handle('streamcancel', this.onstreamcancel, this)
+    .handle('observable', this.onobservable, this)
+    .handle('observablecancel', this.onobservablecancel, this)
     .handle('method', this.onmethod, this)
     .handle('disconnect', this.ondisconnect, this);
 
@@ -1768,56 +1759,56 @@ ServicePrivate.prototype.onmethod = function(request) {
 };
 
 /**
- * Called during `client.stream()`
+ * Called during `client.observable()`
  *
  * @param {Object} method
  * @param {String} method.name Name of the function to be executed
- * @param {String} method.id Stream Id, used to sync client and service streams
+ * @param {String} method.id Observable Id, used to sync client and service observables
  * @param {Object} request Request object
  */
 
-ServicePrivate.prototype.onstream = function(request) {
-  debug('stream', request.data);
+ServicePrivate.prototype.onobservable = function(request) {
+  debug('observable', request.data);
   var data = request.data;
-  var fn = this.streams[data.name];
+  var fn = this.observables[data.name];
   var client = request.sender;
 
   if (!fn) throw error(6, data.name);
 
   var id = data.id;
-  var stream = new ServiceStream({
+  var observable = new ServiceObservable({
     id: id,
     channel: this.channels[client],
     serviceId: this.id,
     clientId: client
   });
 
-  this.activeStreams[id] = stream;
+  this.activeObservables[id] = observable;
 
-  // always pass stream object as first
+  // always pass observable object as first
   // argument to simplify the process
-  fn.apply(this.public, [stream].concat(data.args));
+  fn.apply(this.public, [observable].concat(data.args));
 
-  // stream doesn't return anything on purpose,
-  // we create another stream object
+  // observable doesn't return anything on purpose,
+  // we create another observable object
   // on the client during request
   request.respond();
 };
 
 /**
- * Called when client requests for `streamcancel`
+ * Called when client requests for `observablecancel`
  *
  * @param {*} data Data sent from client (reason for cancelation).
  * @return {Promise}
  * @private
  */
 
-ServicePrivate.prototype.onstreamcancel = function(request) {
+ServicePrivate.prototype.onobservablecancel = function(request) {
   var data = request.data;
   var id = data.id;
-  var stream = this.activeStreams[id];
-  delete this.activeStreams[id];
-  request.respond(stream._.cancel(data.reason));
+  var observable = this.activeObservables[id];
+  delete this.activeObservables[id];
+  request.respond(observable._.cancel(data.reason));
 };
 
 /**
@@ -1934,14 +1925,14 @@ ServicePrivate.prototype.addMethod = function(name, fn) {
 
 
 /**
- * Add a method to the stream registry.
+ * Add a method to the observable registry.
  *
  * @param {String}   name
  * @param {Function} fn
  */
 
-ServicePrivate.prototype.addStream = function(name, fn) {
-  this.streams[name] = fn;
+ServicePrivate.prototype.addObservable = function(name, fn) {
+  this.observables[name] = fn;
 };
 
 /**
@@ -2024,11 +2015,11 @@ function error(id) {
     3: 'unknown request type: "' + args[0] + '"',
     4: 'method "' + args[0] + '" doesn\'t exist',
     5: 'arguments types don\'t match contract',
-    6: 'stream "' + args[0] + '" doesn\'t exist',
+    6: 'observable "' + args[0] + '" doesn\'t exist',
   }[id]);
 }
 
-},{"../messenger":7,"../thread-global":10,"../utils":11,"./stream":9}],9:[function(require,module,exports){
+},{"../messenger":6,"../thread-global":9,"../utils":10,"./observable":8}],8:[function(require,module,exports){
 'use strict';
 
 /**
@@ -2041,7 +2032,7 @@ var Messenger = require('../messenger');
  * Exports
  */
 
-module.exports = ServiceStream;
+module.exports = ServiceObservable;
 
 /**
  * Mini Logger
@@ -2049,35 +2040,35 @@ module.exports = ServiceStream;
  * @type {Function}
  */
 
-var debug = 0 ? console.log.bind(console, '[ServiceStream]') : function() {};
+var debug = 0 ? console.log.bind(console, '[ServiceObservable]') : function() {};
 
 /**
- * Writable Stream instance passed to the
- * `service.stream` implementation
+ * Writable Observable instance passed to the
+ * `service.observable` implementation
  *
  * @param {Object} options
- * @param {String} options.id Stream ID used to sync client and service streams
+ * @param {String} options.id Observable ID used to sync client and service observables
  * @param {BroadcastChannel} options.channel Channel used to postMessage
  * @param {String} options.serviceId ID of the service
  * @param {String} options.clientId ID of client that should receive message
  */
 
-function ServiceStream(options) {
-  this._ = new PrivateServiceStream(this, options);
+function ServiceObservable(options) {
+  this._ = new PrivateServiceObservable(this, options);
 }
 
 /**
  * Services that allows clients to
  * cancel the operation before it's
  * complete should override the
- * `stream.cancel` method.
+ * `observable.cancel` method.
  *
  * @param {*} [reason] Data sent from client about the cancellation
  * @returns {(Promise|*)}
  */
 
-ServiceStream.prototype.cancel = function(reason) {
-  var err = new TypeError('service should implement stream.cancel()');
+ServiceObservable.prototype.cancel = function(reason) {
+  var err = new TypeError('service should implement observable.cancel()');
   return Promise.reject(err);
 };
 
@@ -2091,7 +2082,7 @@ ServiceStream.prototype.cancel = function(reason) {
  * @returns {Promise}
  */
 
-ServiceStream.prototype.abort = function(data) {
+ServiceObservable.prototype.abort = function(data) {
   debug('abort', data);
   return this._.post('abort', 'aborted', data);
 };
@@ -2103,50 +2094,50 @@ ServiceStream.prototype.abort = function(data) {
  * @returns {Promise}
  */
 
-ServiceStream.prototype.write = function(data) {
+ServiceObservable.prototype.write = function(data) {
   debug('write', data);
   return this._.post('write', 'writable', data);
 };
 
 /**
- * Closes the stream, signals that
+ * Closes the observable, signals that
  * action was completed with success.
  *
- * According to whatwg streams spec,
- * WritableStream#close() doesn't send data.
+ * According to whatwg observables spec,
+ * WritableObservable#close() doesn't send data.
  *
  * @returns {Promise}
  */
 
-ServiceStream.prototype.close = function() {
+ServiceObservable.prototype.close = function() {
   debug('close');
   return this._.post('close', 'closed');
 };
 
 /**
- * Initialize a new `ClientStreamPrivate`.
+ * Initialize a new `ClientObservablePrivate`.
  *
- * @param {ServiceStream} target
+ * @param {ServiceObservable} target
  * @param {Object} options
  * @private
  */
 
-function PrivateServiceStream(target, options) {
+function PrivateServiceObservable(target, options) {
   this.target = target;
   this.id = options.id;
   this.channel = options.channel;
   this.client = options.clientId;
   this.state = 'writable';
-  this.messenger = new Messenger(options.serviceId, '[ServiceStream]');
+  this.messenger = new Messenger(options.serviceId, '[ServiceObservable]');
   debug('initialized', target, options);
 }
 
 /**
  * Validate the internal state to avoid
- * passing data to the client when stream
+ * passing data to the client when observable
  * is already 'closed/aborted/canceled'.
  *
- * Returns a Stream to simplify the 'cancel'
+ * Returns a Observable to simplify the 'cancel'
  * & 'post' logic since they always need
  * to return promises.
  *
@@ -2156,7 +2147,7 @@ function PrivateServiceStream(target, options) {
  * @private
  */
 
-PrivateServiceStream.prototype.validateState = function(actionName, state) {
+PrivateServiceObservable.prototype.validateState = function(actionName, state) {
   if (this.state !== 'writable') {
     var msg = 'Can\'t ' + actionName + ' on current state: ' + this.state;
     return Promise.reject(new TypeError(msg));
@@ -2168,17 +2159,17 @@ PrivateServiceStream.prototype.validateState = function(actionName, state) {
 
 /**
  * Validate the current state and
- * call cancel on the target stream.
+ * call cancel on the target observable.
  *
  * Called by the Service when client
- * sends a 'streamcancel' message.
+ * sends a 'observablecancel' message.
  *
  * @param {*} [reason] Reason for cancelation sent by the client
  * @returns {Promise}
  * @private
  */
 
-PrivateServiceStream.prototype.cancel = function(reason) {
+PrivateServiceObservable.prototype.cancel = function(reason) {
   return this.validateState('cancel', 'canceled').then(function() {
     return this.target.cancel(reason);
   }.bind(this));
@@ -2194,12 +2185,12 @@ PrivateServiceStream.prototype.cancel = function(reason) {
  * @private
  */
 
-PrivateServiceStream.prototype.post = function(type, state, data) {
+PrivateServiceObservable.prototype.post = function(type, state, data) {
   debug('post', type, state, data);
   return this.validateState(type, state).then(function() {
     debug('validated', this.channel);
     this.messenger.push(this.channel, {
-      type: 'streamevent',
+      type: 'observableevent',
       recipient: this.client,
       data: {
         id: this.id,
@@ -2210,7 +2201,7 @@ PrivateServiceStream.prototype.post = function(type, state, data) {
   }.bind(this));
 };
 
-},{"../messenger":7}],10:[function(require,module,exports){
+},{"../messenger":6}],9:[function(require,module,exports){
 'use strict';
 
 /**
@@ -2516,7 +2507,7 @@ function error(id) {
 
 module.exports = new ThreadGlobal();
 
-},{"./emitter":5,"./messenger":7,"./utils":11}],11:[function(require,module,exports){
+},{"./emitter":4,"./messenger":6,"./utils":10}],10:[function(require,module,exports){
 'use strict';
 
 /**
@@ -2622,5 +2613,14 @@ exports.env = function() {
   }[self.constructor.name] || 'unknown';
 };
 
-},{}]},{},[1])(1)
+},{}],11:[function(require,module,exports){
+
+module.exports = {
+  create: require('./lib/child-thread'),
+  manager: require('./lib/manager'),
+  service: require('./lib/service'),
+  client: require('./lib/client')
+};
+
+},{"./lib/child-thread":1,"./lib/client":2,"./lib/manager":5,"./lib/service":7}]},{},[11])(11)
 });

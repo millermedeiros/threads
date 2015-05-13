@@ -1,17 +1,17 @@
 /*global threads,assert,suite,setup,teardown,test*/
 /*jshint esnext:true, maxlen:false*/
 
-suite('ServiceStream /', function() {
+suite('ServiceObservable /', function() {
 
   // we use these tests basically just to check edge cases, regular use cases
   // are handled by the client tests
 
-  var stream;
+  var observable;
   var lastMessage;
 
   setup(function() {
-    stream = new threads.service.Stream({
-      id: 'fake-stream-id',
+    observable = new threads.service.Observable({
+      id: 'fake-observable-id',
       channel: {
         postMessage: function(msg) {
           lastMessage = msg.data;
@@ -23,16 +23,16 @@ suite('ServiceStream /', function() {
     });
   });
 
-  function cancelStream(reason) {
-    return stream._.cancel(reason);
+  function cancelObservable(reason) {
+    return observable._.cancel(reason);
   }
 
   test('write + close + write', function(done) {
-    stream.write('lorem').then(function() {
+    observable.write('lorem').then(function() {
       assert.equal(lastMessage.data.data, 'lorem');
-      stream.close();
+      observable.close();
       // write will be ignored
-      stream.write('ipsum').catch(function(err) {
+      observable.write('ipsum').catch(function(err) {
         assert.ok(err);
         assert.equal(lastMessage.data.type, 'close');
         done();
@@ -41,8 +41,8 @@ suite('ServiceStream /', function() {
   });
 
   test('close + close', function(done) {
-    stream.close().catch(function() { done('first call should succeed'); });
-    stream.close()
+    observable.close().catch(function() { done('first call should succeed'); });
+    observable.close()
       .then(function() { done('second call should fail'); })
       .catch(function(err) {
         assert.ok(err);
@@ -51,8 +51,8 @@ suite('ServiceStream /', function() {
   });
 
   test('close + abort', function(done) {
-    stream.close().catch(function() { done('first call should succeed'); });
-    stream.abort()
+    observable.close().catch(function() { done('first call should succeed'); });
+    observable.abort()
       .then(function() { done('second call should fail'); })
       .catch(function(err) {
         assert.ok(err);
@@ -62,8 +62,8 @@ suite('ServiceStream /', function() {
   });
 
   test('abort + abort', function(done) {
-    stream.abort().catch(function() { done('first call should succeed'); });
-    stream.abort()
+    observable.abort().catch(function() { done('first call should succeed'); });
+    observable.abort()
       .then(function() { done('second call should fail'); })
       .catch(function(err) {
         assert.ok(err);
@@ -72,8 +72,8 @@ suite('ServiceStream /', function() {
   });
 
   test('abort + close', function(done) {
-    stream.abort().catch(function() { done('first call should succeed'); });
-    stream.close()
+    observable.abort().catch(function() { done('first call should succeed'); });
+    observable.close()
       .then(function() { done('second call should fail'); })
       .catch(function(err) {
         assert.ok(err);
@@ -83,8 +83,8 @@ suite('ServiceStream /', function() {
   });
 
   test('abort + write', function(done) {
-    stream.abort().catch(function() { done('first call should succeed'); });
-    stream.write('lorem ipsum')
+    observable.abort().catch(function() { done('first call should succeed'); });
+    observable.write('lorem ipsum')
       .then(function() { done('second call should fail'); })
       .catch(function(err) {
         assert.ok(err);
@@ -95,7 +95,7 @@ suite('ServiceStream /', function() {
 
   suite('cancel /', function() {
     test('not implemented', function(done) {
-      cancelStream()
+      cancelObservable()
         .then(function() { done('cancel should fail'); })
         .catch(function(err) {
           assert.ok(err);
@@ -105,18 +105,18 @@ suite('ServiceStream /', function() {
 
     suite('implemented /', function() {
       test('sync', function(done) {
-        stream.cancel = function(reason) { assert.equal(reason, 'foo'); };
-        cancelStream('foo')
+        observable.cancel = function(reason) { assert.equal(reason, 'foo'); };
+        cancelObservable('foo')
           .then(function() { done(); })
           .catch(function() { done('should not be called'); });
       });
 
       test('sync error', function(done) {
-        stream.cancel = function(reason) {
+        observable.cancel = function(reason) {
           assert.equal(reason, 'with error');
           throw new Error('cancel error!');
         };
-        cancelStream('with error')
+        cancelObservable('with error')
           .then(function() { done('this should not be called'); })
           .catch(function(err) {
             assert.ok(err);
@@ -125,11 +125,11 @@ suite('ServiceStream /', function() {
       });
 
       test('async success', function(done) {
-        stream.cancel = function(reason) {
+        observable.cancel = function(reason) {
           assert.equal(reason, 'success');
           return Promise.resolve('canceled with success');
         };
-        cancelStream('success')
+        cancelObservable('success')
           .then(function(msg) {
             assert.equal(msg, 'canceled with success');
             done();
@@ -137,11 +137,11 @@ suite('ServiceStream /', function() {
       });
 
       test('async error', function(done) {
-        stream.cancel = function(reason) {
+        observable.cancel = function(reason) {
           assert.equal(reason, 'foo');
           return Promise.reject(new Error('failed to cancel'));
         };
-        cancelStream('foo')
+        cancelObservable('foo')
           .then(function() { done(new Error('should fail')); })
           .catch(function(err) {
             assert.ok(err);
